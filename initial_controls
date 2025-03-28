@@ -3,41 +3,43 @@ from gpiozero import Servo
 from time import sleep
 import serial
 
-servo = Servo(21)
-
+# Configure the servo on GPIO 21
+servo = Servo(21, min_pulse_width=0.5/1000, max_pulse_width=2.5/1000)
 
 ser = serial.Serial("/dev/ttyAMA0", 115200)
 
+def set_servo_angle(angle):
+    """Convert degrees (0-180) to a value between -1 and 1 for gpiozero Servo."""
+    servo.value = (angle / 90.0) - 1  
+
 def read_data():
     while True:
-        counter = ser.in_waiting # number of bytes of the serial port
+        counter = ser.in_waiting  # Number of bytes of the serial port
         if counter > 8:
             bytes_serial = ser.read(9)
             ser.reset_input_buffer()
 
-
-
-            if bytes_serial[0] == 0x59 and bytes_serial[1] == 0x59: 
-                distance = bytes_serial[2] + bytes_serial[3]*256 # multiplied by 256, because the binary data is shifted by 8 to the left (equivalent to "<< 8").     
-                                                         # Dist_L, could simply be added resulting in 16-bit data of Dist_Total.
-                if(distance < 20):
-                    servo.min()
+            if bytes_serial[0] == 0x59 and bytes_serial[1] == 0x59:
+                distance = bytes_serial[2] + bytes_serial[3] * 256  # Compute distance value
+                
+                if distance < 20:
+                    set_servo_angle(0)   # Move to 
                     sleep(0.5)
-                    servo.mid()
+                    set_servo_angle(90)  # Move to 9
                     sleep(1)
-                    servo.max()
+                    set_servo_angle(180) # Move to 18
                     sleep(0.5)
-                print("Distance:"+ str(distance))
+                
+                print("Distance:" + str(distance))
                 time.sleep(1)
                 ser.reset_input_buffer()
-   
+
 if __name__ == "__main__":
     try:
-        if ser.isOpen() == False:
+        if not ser.isOpen():
             ser.open()
         read_data()
-    except KeyboardInterrupt(): 
-        if ser != None:
+    except KeyboardInterrupt:
+        if ser:
             ser.close()
-            print("program interrupted by the user")
- 
+            print("Program interrupted by the user")
