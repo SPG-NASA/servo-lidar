@@ -1,0 +1,87 @@
+import RPi.GPIO as GPIO
+import serial
+import time
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Servo configuration
+SERVO_PIN = 21       # GPIO pin connected to servo
+MIN_DUTY = 2.5       # Duty cycle for 0 degrees
+MAX_DUTY = 12.5      # Duty cycle for 180 degrees
+
+# LiDAR configuration
+SERIAL_PORT = '/dev/ttyAMA0'  # UART serial port
+BAUD_RATE = 115200
+
+def setup_servo():
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(SERVO_PIN, GPIO.OUT)
+    pwm = GPIO.PWM(SERVO_PIN, 50)  # 50 Hz frequency
+    pwm.start(0)
+    return pwm
+
+def setup_lidar():
+    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+    ser.reset_input_buffer()
+    return ser
+
+def get_distance(ser):
+    """Read distance from TFmini-S LiDAR"""
+    while True:
+        # Wait for valid frame header
+        while ser.read(1) != b'\x59':
+            pass
+        if ser.read(1) == b'\x59':
+            # Read remaining 7 bytes
+            frame = ser.read(7)
+            if len(frame) != 7:
+                continue
+            
+            # Calculate checksum
+            checksum = (0x59 + 0x59 + sum(frame[:6])) % 256
+            if checksum == frame[6]:
+                distance = frame[0] + (frame[1] << 8)
+                return distance
+
+def move_servo(pwm, angle):
+    duty_cycle = (angle / 18) + MIN_DUTY
+    pwm.ChangeDutyCycle(duty_cycle)
+    time.sleep(0.1)  # Allow time for servo movement
+
+def main():
+    pwm = setup_servo()
+    ser = setup_lidar()
+    scan_data = []
+    
+    try:
+        print("Starting LiDAR scan...")
+        for angle in range(0, 181, 1):  # 0 to 180 degrees
+            move_servo(pwm, angle)
+            distance = get_distance(ser)
+            scan_data.append((angle, distance))
+            print(f"Angle: {angle:3}, Distance: {distance}cm")
+            
+    except KeyboardInterrupt:
+        print("Scan interrupted!")
+    finally:
+        
+        
+        # Save data to CSV file
+        with open('lidar_scan.csv', 'w') as f:
+            f.write("Angle,Distance(cm)\n")
+            for angle, distance in scan_data:
+                f.write(f"{angle},{distance}\n")
+        print("Scan data saved to lidar_scan.csv")
+        
+        df = pd.read_csv("lidar_scan.csv")
+        print(df.head(10))
+        
+        df.plot()
+        plt.show()
+        
+        pwm.stop()
+        GPIO.cleanup()
+        ser.close()
+
+if __name__ == "__main__":
+    main()
